@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "tdqn"
+version = "0.1.0"
+description = ""
+authors = ["Daniel Manning <danielmanning213@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.7"
+spacy = "2.2.3"
+jericho = "2.1.0"
+torch = { url = "https://download.pytorch.org/whl/cu113/torch-1.12.1%2Bcu113-cp37-cp37m-linux_x86_64.whl" }
+pyyaml = "^6.0"
+sentencepiece = "^0.1.97"
+redis = "^4.3.4"
+
+[tool.poetry.group.dev.dependencies]
+black = {version = "^22.10.0", allow-prereleases = true}
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

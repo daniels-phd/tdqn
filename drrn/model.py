@@ -13,25 +13,25 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class DRRN(torch.nn.Module):
     """
-        Deep Reinforcement Relevance Network - He et al. '16
+    Deep Reinforcement Relevance Network - He et al. '16
 
     """
+
     def __init__(self, vocab_size, embedding_dim, hidden_dim):
         super(DRRN, self).__init__()
-        self.embedding    = nn.Embedding(vocab_size, embedding_dim)
-        self.obs_encoder  = nn.GRU(embedding_dim, hidden_dim)
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.obs_encoder = nn.GRU(embedding_dim, hidden_dim)
         self.look_encoder = nn.GRU(embedding_dim, hidden_dim)
-        self.inv_encoder  = nn.GRU(embedding_dim, hidden_dim)
-        self.act_encoder  = nn.GRU(embedding_dim, hidden_dim)
-        self.hidden       = nn.Linear(4*hidden_dim, hidden_dim)
-        self.act_scorer   = nn.Linear(hidden_dim, 1)
-
+        self.inv_encoder = nn.GRU(embedding_dim, hidden_dim)
+        self.act_encoder = nn.GRU(embedding_dim, hidden_dim)
+        self.hidden = nn.Linear(4 * hidden_dim, hidden_dim)
+        self.act_scorer = nn.Linear(hidden_dim, 1)
 
     def packed_rnn(self, x, rnn):
-        """ Runs the provided rnn on the input x. Takes care of packing/unpacking.
+        """Runs the provided rnn on the input x. Takes care of packing/unpacking.
 
-            x: list of unpadded input sequences
-            Returns a tensor of size: len(x) x hidden_dim
+        x: list of unpadded input sequences
+        Returns a tensor of size: len(x) x hidden_dim
         """
         lengths = torch.tensor([len(n) for n in x], dtype=torch.long, device=device)
         # Sort this batch in descending order by seq length
@@ -43,28 +43,29 @@ class DRRN(torch.nn.Module):
         x_tt = torch.from_numpy(padded_x).type(torch.long).to(device)
         x_tt = x_tt.index_select(0, idx_sort)
         # Run the embedding layer
-        embed = self.embedding(x_tt).permute(1,0,2) # Time x Batch x EncDim
+        embed = (
+            self.embedding(x_tt).permute(1, 0, 2).to(device)
+        )  # Time x Batch x EncDim
         # Pack padded batch of sequences for RNN module
-        packed = nn.utils.rnn.pack_padded_sequence(embed, lengths)
+        packed = nn.utils.rnn.pack_padded_sequence(embed, lengths.to("cpu"))
         # Run the RNN
         out, _ = rnn(packed)
         # Unpack
         out, _ = nn.utils.rnn.pad_packed_sequence(out)
         # Get the last step of each sequence
-        idx = (lengths-1).view(-1,1).expand(len(lengths), out.size(2)).unsqueeze(0)
+        idx = (lengths - 1).view(-1, 1).expand(len(lengths), out.size(2)).unsqueeze(0)
         out = out.gather(0, idx).squeeze(0)
         # Unsort
         out = out.index_select(0, idx_unsort)
         return out
 
-
     def forward(self, state_batch, act_batch):
         """
-            Batched forward pass.
-            obs_id_batch: iterable of unpadded sequence ids
-            act_batch: iterable of lists of unpadded admissible command ids
+        Batched forward pass.
+        obs_id_batch: iterable of unpadded sequence ids
+        act_batch: iterable of lists of unpadded admissible command ids
 
-            Returns a tuple of tensors containing q-values for each item in the batch
+        Returns a tuple of tensors containing q-values for each item in the batch
         """
         # Zip the state_batch into an easy access format
         state = State(*zip(*state_batch))
@@ -79,23 +80,25 @@ class DRRN(torch.nn.Module):
         inv_out = self.packed_rnn(state.inventory, self.inv_encoder)
         state_out = torch.cat((obs_out, look_out, inv_out), dim=1)
         # Expand the state to match the batches of actions
-        state_out = torch.cat([state_out[i].repeat(j,1) for i,j in enumerate(act_sizes)], dim=0)
-        z = torch.cat((state_out, act_out), dim=1) # Concat along hidden_dim
+        state_out = torch.cat(
+            [state_out[i].repeat(j, 1) for i, j in enumerate(act_sizes)], dim=0
+        )
+        z = torch.cat((state_out, act_out), dim=1)  # Concat along hidden_dim
         z = F.relu(self.hidden(z))
         act_values = self.act_scorer(z).squeeze(-1)
         # Split up the q-values by batch
         return act_values.split(act_sizes)
 
-
     def act(self, states, act_ids, sample=True):
-        """ Returns an action-string, optionally sampling from the distribution
-            of Q-Values.
+        """Returns an action-string, optionally sampling from the distribution
+        of Q-Values.
         """
         act_values = self.forward(states, act_ids)
         if sample:
             act_probs = [F.softmax(vals, dim=0) for vals in act_values]
-            act_idxs = [torch.multinomial(probs, num_samples=1).item() \
-                        for probs in act_probs]
+            act_idxs = [
+                torch.multinomial(probs, num_samples=1).item() for probs in act_probs
+            ]
         else:
             act_idxs = [vals.argmax(dim=0).item() for vals in act_values]
         return act_idxs, act_values

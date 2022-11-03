@@ -26,7 +26,7 @@ import sentencepiece as spm
 def configure_logger(log_dir):
     logger.configure(log_dir, format_strs=['log'])
     global tb
-    tb = logger.Logger(log_dir, [logger.make_output_format('tensorboard', log_dir),
+    tb = logger.Logger(log_dir, [
                                  logger.make_output_format('csv', log_dir),
                                  logger.make_output_format('stdout', log_dir)])
     global log
